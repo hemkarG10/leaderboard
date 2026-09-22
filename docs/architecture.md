@@ -2,18 +2,28 @@
 
 See also [DESIGN.md](../DESIGN.md) and [DECISIONS.md](../DECISIONS.md).
 
+## Request lifecycle (anchor for review)
+
 ```mermaid
-flowchart LR
-    C[Client] -->|HTTPS| MW[Middleware<br/>request_id · access log]
-    MW --> R[api/leaderboard.py]
-    R -->|Depends| S[infra/store.py<br/>InMemoryStore]
-    S --> D[domain/leaderboard.py<br/>dict + SortedList]
-    R -.->|AppError| EH[Error envelope]
-    EH --> C
-    R -->|200/201| C
-    P[Prometheus] -->|scrape| M["/metrics"]
-    Probe[Liveness] --> H["/healthz"]
+flowchart TD
+    C[Client] -->|HTTPS| MW[RequestContextMiddleware<br/>X-Request-ID<br/>http_requests_total<br/>http_request_duration_seconds]
+    MW --> V{Pydantic / path validation}
+    V -->|fail| REJ[400 validation_failed<br/>score_submits_total result=rejected]
+    REJ --> ENV[Error envelope + request_id]
+    ENV --> C
+    V -->|ok| R[api/leaderboard.py]
+    R -->|Depends| S[infra/store.py<br/>InMemoryStore<br/>seq · caps]
+    S --> D[domain/leaderboard.py<br/>by_user dict<br/>SortedList -score,seq,user_id]
+    R -->|AppError| ENV
+    R -->|200 / 201| OK[JSON body<br/>score_submits_total result=ok]
+    OK --> C
+    P[Prometheus scrape] --> M["GET /metrics"]
+    L[Liveness probe] --> H["GET /healthz"]
+    RD[Readiness] --> RY["GET /readyz"]
 ```
+
+**Label rule:** HTTP metrics use the **route template**
+(`/v1/games/{game_id}/scores`), never raw `game_id` / `user_id`.
 
 ## Layers
 | Layer | Module | Rule |
@@ -24,4 +34,12 @@ flowchart LR
 
 ## Process model
 One uvicorn worker. State lives on `app.state.store`. Multiple workers would
-split the board (each process has its own memory).
+split the board (each process has its own memory). Restart clears all boards
+(in-memory; documented).
+
+## Observability (only these series)
+| Metric | Labels |
+|---|---|
+| `http_requests_total` | `method`, `route`, `status` |
+| `http_request_duration_seconds` | `method`, `route`, `status` |
+| `score_submits_total` | `result` ∈ {`ok`, `rejected`} |

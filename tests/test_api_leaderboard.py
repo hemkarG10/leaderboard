@@ -40,7 +40,8 @@ async def client(settings: Settings):
 async def test_healthz_readyz_metrics(client: AsyncClient) -> None:
     assert (await client.get("/healthz")).json() == {"status": "ok"}
     assert (await client.get("/readyz")).json()["status"] == "ready"
-    assert "leaderboard_submissions_total" in (await client.get("/metrics")).text
+    assert "http_requests_total" in (await client.get("/metrics")).text
+    assert "score_submits_total" in (await client.get("/metrics")).text
 
 
 @pytest.mark.asyncio

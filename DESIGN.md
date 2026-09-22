@@ -116,7 +116,19 @@ never hold it across network I/O.
 | Page size | `top_default` / `top_max` | default 10, max 100; over max → 400 |
 | Surroundings | `window_default` / `window_max` | default 1, max 25 |
 | Games / users | `max_games`, `max_users_per_game` | 409 when full |
-| Metric labels | outcome enum only | never `game_id` / `user_id` |
+| Metric labels | route templates + enums only | never `game_id` / `user_id` values |
+
+## 8b. Metrics (Prometheus)
+
+One middleware records HTTP series; submit path records result:
+
+| Metric | Labels |
+|---|---|
+| `http_requests_total` | `method`, `route`, `status` |
+| `http_request_duration_seconds` | `method`, `route`, `status` |
+| `score_submits_total` | `result` ∈ {`ok`, `rejected`} |
+
+Scrape: `GET /metrics`. No Grafana/tracing in scope.
 
 ## 9. Failure modes
 

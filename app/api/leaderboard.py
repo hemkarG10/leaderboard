@@ -15,9 +15,9 @@ from app.api.schemas import (
     validate_id,
 )
 from app.config import Settings, get_settings
-from app.errors import ValidationFailed
+from app.errors import AppError, ValidationFailed
 from app.infra.store import InMemoryStore
-from app.metrics import SUBMISSIONS, set_entries_gauge
+from app.metrics import score_submit_ok, score_submit_rejected
 
 logger = structlog.get_logger()
 
@@ -58,26 +58,28 @@ def submit_score(
     store: InMemoryStore = Depends(get_store),
     settings: Settings = Depends(get_app_settings),
 ) -> SubmitScoreResponse | JSONResponse:
-    game_id = _path_id(game_id, "game_id")
-
-    if settings.api_key:
-        provided = request.headers.get("X-API-Key", "")
-        if provided != settings.api_key:
-            raise ValidationFailed(
-                "invalid or missing API key",
-                details=[{"loc": ["header", "X-API-Key"], "msg": "unauthorized"}],
-            )
-
     try:
+        game_id = _path_id(game_id, "game_id")
+
+        if settings.api_key:
+            provided = request.headers.get("X-API-Key", "")
+            if provided != settings.api_key:
+                raise ValidationFailed(
+                    "invalid or missing API key",
+                    details=[
+                        {"loc": ["header", "X-API-Key"], "msg": "unauthorized"}
+                    ],
+                )
+
         result = store.submit(game_id, body.user_id, body.score)
+    except AppError:
+        score_submit_rejected()
+        raise
     except Exception:
-        # Capacity / unexpected failures on the write path.
-        SUBMISSIONS.labels(outcome="rejected").inc()
+        score_submit_rejected()
         raise
 
-    outcome = "improved" if result.improved else "not_improved"
-    SUBMISSIONS.labels(outcome=outcome).inc()
-    set_entries_gauge(store.total_entries())
+    score_submit_ok()
 
     logger.info(
         "score_submitted",

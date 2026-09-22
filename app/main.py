@@ -15,8 +15,8 @@ from app.api import health, leaderboard
 from app.config import Settings, get_settings, set_settings
 from app.errors import AppError
 from app.infra.store import InMemoryStore
-from app.logging_setup import RequestIdMiddleware, configure_logging
-from app.metrics import SUBMISSIONS
+from app.logging_setup import RequestContextMiddleware, configure_logging
+from app.metrics import score_submit_rejected
 
 logger = structlog.get_logger()
 
@@ -103,7 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             {"name": "ops", "description": "Health, readiness, and Prometheus metrics"},
         ],
     )
-    app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(RequestContextMiddleware)
 
     @app.get("/", include_in_schema=False)
     def root_redirect() -> RedirectResponse:
@@ -128,8 +128,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
         # Count body validation failures on the write path only.
-        if request.method == "POST" and request.url.path.endswith("/scores"):
-            SUBMISSIONS.labels(outcome="rejected").inc()
+        if request.method == "POST" and "/scores" in request.url.path:
+            score_submit_rejected()
         rid = request.headers.get("X-Request-ID", "")
         return JSONResponse(
             status_code=400,

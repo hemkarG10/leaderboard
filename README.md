@@ -4,7 +4,17 @@ Realtime per-game leaderboards: submit a score, read top N, read a user's rank
 with neighbours. In-memory, single process (P0).
 
 **Design:** [DESIGN.md](DESIGN.md) · **ADRs:** [DECISIONS.md](DECISIONS.md) ·
-**Spec:** [SPEC.md](SPEC.md)
+**Spec:** [SPEC.md](SPEC.md) · **Architecture:** [docs/architecture.md](docs/architecture.md)
+
+## Review anchors
+
+| Requirement | Where |
+|---|---|
+| Architecture / request lifecycle | [docs/architecture.md](docs/architecture.md) (Mermaid) |
+| Validation & errors | pydantic `StrictInt` + ID regex; envelope in `app/main.py` |
+| Tests | `pytest -q` — checklist, scale/race, metrics (`tests/`) |
+| CI/CD | `.github/workflows/ci.yml` + `deploy.yml` → DigitalOcean |
+| Setup / run / test | Quickstart below |
 
 ## Ranking rules (locked)
 
@@ -29,7 +39,21 @@ decimals rejected). IDs: `^[A-Za-z0-9_-]{1,64}$`.
 | Surroundings | **404** `game_not_found` / `user_not_found` |
 
 Swagger at `/docs` is for manual smoke checks. It does **not** replace tests.
-Cases 1–53 live in `tests/test_checklist_cases.py`.
+Correctness: `tests/test_checklist_cases.py`. Scale / race / metrics:
+`tests/test_scale_race_metrics.py`.
+
+## Metrics (Prometheus)
+
+`GET /metrics` — scrape with `curl -s localhost:8000/metrics`.
+
+| Metric | Labels |
+|---|---|
+| `http_requests_total` | `method`, `route` (template), `status` |
+| `http_request_duration_seconds` | same |
+| `score_submits_total` | `result` = `ok` \| `rejected` |
+
+Route templates only (e.g. `/v1/games/{game_id}/scores`) — never `user_id` /
+`game_id` values.
 
 ## Quickstart
 
@@ -80,8 +104,8 @@ docker compose down
 **CI** (`.github/workflows/ci.yml`): on every push/PR — install deps, `pytest`,
 Docker image build.
 
-**CD** (`.github/workflows/deploy.yml`): on push to `main` — deploy to
-DigitalOcean App Platform via `digitalocean/app_action` (needs secret
+**CD** (`.github/workflows/deploy.yml`): on push to `main` — build image, push
+to DigitalOcean Container Registry, update App Platform (secret
 `DIGITALOCEAN_ACCESS_TOKEN`).
 
 ### One-time setup
