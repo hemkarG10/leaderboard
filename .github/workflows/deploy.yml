@@ -65,4 +65,11 @@ jobs:
 
       - name: Print live URL
         run: |
-          doctl apps list --format ID,Spec.Name,DefaultIngress,ActiveDeployment.Phase
+          doctl apps list --format ID,Spec.Name,DefaultIngress
+          doctl apps list -o json | python3 -c '
+          import json,sys
+          for a in json.load(sys.stdin):
+              print("live_url:", a.get("live_url") or a.get("default_ingress"))
+              print("phase:", (a.get("active_deployment") or {}).get("phase"))
+              print("building:", (a.get("in_progress_deployment") or {}).get("phase"))
+          '
