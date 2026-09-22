@@ -42,7 +42,7 @@ floats / `"100"` / bools rejected). **IDs:** `^[A-Za-z0-9_-]{1,id_max_len}$`.
 
 | Area | Assumption |
 |---|---|
-| Scale | ≤ 1M entries per game in memory, single instance |
+| Scale | ≤ 1M entries total: `max_games=100` × `max_users_per_game=10_000` (`Settings`) |
 | Semantics | Latest different score wins; equal resubmit is a no-op |
 | Tie-break | Earlier `achieved_seq`, then `user_id` |
 | Auth | Optional static `API_KEY` on writes; reads public |
@@ -112,10 +112,11 @@ boards (walk `by_user` / `rank_of`). No second SortedList. See ADR-006.
 
 ## 7. Concurrency
 
-Store mutations are synchronous (no `await`). One uvicorn worker. Concurrent
-asyncio tasks serialize on the event loop, so each read-modify-write is atomic.
-If an `await` or thread pool is added later, use a per-game `asyncio.Lock` and
-never hold it across network I/O.
+Sync FastAPI routes run on a threadpool, so store calls can overlap.
+`InMemoryStore` holds one `threading.Lock` for the whole of every read and
+write (`submit`, `top`, `around`, global/profile/list/compare). Mutations stay
+synchronous (no `await` while the lock is held). One uvicorn worker; a second
+instance still needs Redis.
 
 ## 8. Bounds (config only)
 
@@ -125,7 +126,7 @@ never hold it across network I/O.
 | ID length / charset | `id_max_len`, `[A-Za-z0-9_-]` | reject spaces / empty / too long |
 | Page size | `top_default` / `top_max` | default 10, max 100; over max → 400 |
 | Surroundings | `window_default` / `window_max` | default 1, max 25 |
-| Games / users | `max_games`, `max_users_per_game` | 409 when full |
+| Games / users | `max_games`, `max_users_per_game` | defaults `100` / `10_000`; 409 when full |
 | Metric labels | route templates + enums only | never `game_id` / `user_id` values |
 
 ## 8b. Metrics (Prometheus)
@@ -174,7 +175,7 @@ See [DECISIONS.md](DECISIONS.md):
 | 001 | Replace on different score; equal resubmit is a no-op |
 | 002 | Tie-break `(-score, achieved_seq, user_id)` |
 | 003 | In-memory `SortedList` + dict |
-| 004 | Single event-loop, one uvicorn worker |
+| 004 | `threading.Lock` on store; one uvicorn worker |
 | 005 | Unknown game on Top X → empty board; surroundings → 404 |
 | 006 | Global score = sum across games; recompute on read (`games_played`, profile, list, compare) |
 

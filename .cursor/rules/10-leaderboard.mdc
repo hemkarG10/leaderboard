@@ -30,4 +30,5 @@ alwaysApply: true
 ## Invariants
 1. dict and SortedList stay in sync.
 2. compute new key → remove old → add new.
-3. no `await` in store RMW; single uvicorn worker.
+3. no `await` while the store lock is held; single uvicorn worker.
+4. `_next_seq()` only when the score is new or different (equal keeps seq).

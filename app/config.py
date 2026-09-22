@@ -18,8 +18,9 @@ class Settings(BaseSettings):
     window_default: int = 1
     window_max: int = 25
     id_max_len: int = 64
-    max_games: int = 10_000
-    max_users_per_game: int = 100_000
+    # Caps sized for a single basic-xxs process (~1M entries total).
+    max_games: int = 100
+    max_users_per_game: int = 10_000
     request_body_max_bytes: int = 65_536
     # P1: leave empty to disable write auth
     api_key: str = ""

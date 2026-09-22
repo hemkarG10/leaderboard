@@ -43,3 +43,8 @@ class CapacityExceeded(AppError):
 class ValidationFailed(AppError):
     status_code = 400
     code = "validation_failed"
+
+
+class Unauthorized(AppError):
+    status_code = 401
+    code = "unauthorized"

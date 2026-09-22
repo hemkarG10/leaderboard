@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import secrets
+
 import structlog
 from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import JSONResponse
@@ -23,7 +25,7 @@ from app.api.schemas import (
     validate_id,
 )
 from app.config import Settings, get_settings
-from app.errors import AppError, ValidationFailed
+from app.errors import AppError, Unauthorized, ValidationFailed
 from app.infra.store import InMemoryStore
 from app.metrics import score_submit_ok, score_submit_rejected
 
@@ -164,8 +166,12 @@ def submit_score(
 
         if settings.api_key:
             provided = request.headers.get("X-API-Key", "")
-            if provided != settings.api_key:
-                raise ValidationFailed(
+            expected = settings.api_key
+            # compare_digest requires equal length; reject early otherwise.
+            if len(provided) != len(expected) or not secrets.compare_digest(
+                provided, expected
+            ):
+                raise Unauthorized(
                     "invalid or missing API key",
                     details=[
                         {"loc": ["header", "X-API-Key"], "msg": "unauthorized"}

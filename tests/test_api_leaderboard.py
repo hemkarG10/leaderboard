@@ -88,8 +88,47 @@ async def test_validation_and_request_id(client: AsyncClient) -> None:
         "/v1/games/maze/scores", json={"user_id": "u", "score": "100"}
     )
     assert res.status_code == 400
-    assert res.json()["error"]["code"] == "validation_failed"
-    assert "request_id" in res.json()["error"]
+    err = res.json()["error"]
+    assert err["code"] == "validation_failed"
+    # Middleware-generated id must appear in the body when the client sent none.
+    assert err["request_id"]
+    assert res.headers.get("x-request-id") == err["request_id"]
 
     echoed = await client.get("/healthz", headers={"X-Request-ID": "exam-req-1"})
     assert echoed.headers.get("x-request-id") == "exam-req-1"
+
+
+@pytest.mark.asyncio
+async def test_bad_api_key_returns_401() -> None:
+    settings = Settings(
+        score_min=-1_000_000_000,
+        score_max=1_000_000_000,
+        top_default=10,
+        top_max=100,
+        window_default=1,
+        window_max=25,
+        id_max_len=64,
+        max_games=100,
+        max_users_per_game=50,
+        api_key="secret-key",
+    )
+    app = create_app(settings)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            bad = await client.post(
+                "/v1/games/maze/scores",
+                json={"user_id": "alice", "score": 1},
+                headers={"X-API-Key": "wrong"},
+            )
+            assert bad.status_code == 401
+            assert bad.json()["error"]["code"] == "unauthorized"
+            assert bad.json()["error"]["request_id"]
+
+            ok = await client.post(
+                "/v1/games/maze/scores",
+                json={"user_id": "alice", "score": 1},
+                headers={"X-API-Key": "secret-key"},
+            )
+            assert ok.status_code == 201

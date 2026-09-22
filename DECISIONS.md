@@ -49,15 +49,19 @@ Dependency: `sortedcontainers`.
 
 ---
 
-## ADR-004: Single-event-loop concurrency model
+## ADR-004: Thread-locked store on one uvicorn worker
 
 **Status:** Accepted
 
-**Context:** Read-modify-write on two structures must not interleave.
+**Context:** Sync FastAPI `def` routes run on a threadpool. Concurrent submits
+can interleave dict + SortedList updates without a lock.
 
-**Decision:** Synchronous store mutations (no `await`). One uvicorn worker.
-Adding `await` or a thread pool requires a per-game `asyncio.Lock`, never held
-across network I/O.
+**Decision:** One `threading.Lock` on `InMemoryStore`, held for the whole of
+each read or write. No `await` while the lock is held. Still one uvicorn
+worker (a second process has its own memory).
+
+**Consequences:** Same-user concurrent posts serialize; board invariants hold.
+Horizontal scale still requires Redis.
 
 ---
 

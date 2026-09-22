@@ -118,7 +118,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
-        rid = request.headers.get("X-Request-ID", "")
+        rid = _request_id(request)
         return JSONResponse(
             status_code=exc.status_code,
             content=_error_body(
@@ -137,7 +137,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Count body validation failures on the write path only.
         if request.method == "POST" and "/scores" in request.url.path:
             score_submit_rejected()
-        rid = request.headers.get("X-Request-ID", "")
+        rid = _request_id(request)
         return JSONResponse(
             status_code=400,
             content=_error_body(
@@ -153,7 +153,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def http_exc_handler(
         request: Request, exc: StarletteHTTPException
     ) -> JSONResponse:
-        rid = request.headers.get("X-Request-ID", "")
+        rid = _request_id(request)
         return JSONResponse(
             status_code=exc.status_code,
             content=_error_body(
@@ -167,7 +167,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(Exception)
     async def unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
-        rid = request.headers.get("X-Request-ID", "")
+        rid = _request_id(request)
         logger.exception("unhandled_error", error=str(exc))
         return JSONResponse(
             status_code=500,
