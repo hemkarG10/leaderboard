@@ -1,0 +1,30 @@
+---
+description: Leaderboard service domain context — semantics, API contract, file map, invariants, and risk-framed tests. Always apply in this repo.
+alwaysApply: true
+---
+
+# Leaderboard service — project context
+
+## Fixed semantics — do not change without an ADR
+- **Replace on different score.** A submit overwrites the stored score when the
+  value differs (higher or lower). Equal resubmit is a no-op (`>`, not needed;
+  equality short-circuits). `improved` is true only when the new score is
+  strictly greater.
+- **Ordering key:** `(-score, achieved_seq, user_id)`.
+- **Ranks** are 1-indexed and unique.
+- **Scores** are `StrictInt` in `[score_min, score_max]` (negatives allowed;
+  floats rejected).
+- **IDs:** `^[A-Za-z0-9_-]{1,id_max_len}$`.
+- Top X on unknown/empty game → 200 empty `entries`. Surroundings miss → 404.
+- Surroundings default `window=1` (one above, one below).
+- First entry → 201 + Location; later → 200.
+
+## File map
+- `app/domain/leaderboard.py`, `app/infra/store.py`, `app/api/leaderboard.py`,
+  `app/api/schemas.py`, `app/errors.py`, `app/config.py`
+- Checklist: `tests/test_checklist_cases.py` (cases 1–53)
+
+## Invariants
+1. dict and SortedList stay in sync.
+2. compute new key → remove old → add new.
+3. no `await` in store RMW; single uvicorn worker.

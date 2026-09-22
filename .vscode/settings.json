@@ -1,0 +1,11 @@
+{
+  "remote.autoForwardPorts": true,
+  "remote.autoForwardPortsSource": "hybrid",
+  "remote.portsAttributes": {
+    "8000": {
+      "label": "Leaderboard API + Swagger",
+      "onAutoForward": "openBrowser",
+      "elevateIfNeeded": true
+    }
+  }
+}

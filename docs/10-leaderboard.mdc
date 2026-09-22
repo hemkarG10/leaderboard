@@ -1,0 +1,51 @@
+---
+description: Leaderboard service domain context — semantics, API contract, file map, invariants, and risk-framed tests. Always apply in this repo.
+alwaysApply: true
+---
+
+# Leaderboard service — project context
+
+## The problem
+A REST service ranking users by score, per game, in real time: submit a score,
+read the top N, read one user's rank with the K users above and below.
+
+## Fixed semantics — do not change without an ADR
+- **Best score wins.** A submit replaces the stored score only if strictly
+  greater (`>`, never `>=`). Replays are therefore idempotent for free.
+- **Ordering key:** `(-score, achieved_seq, user_id)`. Higher score first; on a
+  tie, whoever reached that score first; then user_id. `achieved_seq` is a
+  server-side monotonic counter from infra — never client time, never wall clock
+  in the domain.
+- **Ranks are 1-indexed and unique** (ordinal).
+- **Scores are `StrictInt`** in `[settings.score_min, settings.score_max]`. Reject
+  strings, bools, floats.
+- **IDs** (`game_id`, `user_id`): `^[A-Za-z0-9_-]{1,settings.id_max_len}$`.
+- Unknown game on read → 404 `game_not_found`. Unknown user → 404
+  `user_not_found`. Offset past the end → 200 with empty `entries`.
+- First entry for a user → 201 + `Location: /v1/games/{g}/users/{u}`.
+  Subsequent submits → 200 with `improved: true|false`.
+
+## File map — put code only here
+- `app/domain/leaderboard.py` — `Entry`, `SubmitResult`, `Leaderboard`
+- `app/infra/store.py` — `InMemoryStore`
+- `app/api/leaderboard.py` — three routes
+- `app/api/schemas.py` — request/response models
+- `app/errors.py` — `GameNotFound`, `UserNotFound`, `CapacityExceeded`
+- `app/config.py` — every limit
+- Tests: `tests/test_leaderboard_domain.py`, `tests/test_api_leaderboard.py`,
+  `tests/test_concurrency.py`
+
+## Config fields (no literals elsewhere)
+`score_min, score_max, top_default, top_max, window_default, window_max,
+id_max_len, max_games, max_users_per_game`.
+
+## Invariants
+1. `len(board.by_user) == len(board.ranked)` and each user appears once in each.
+2. Update = compute new key → remove old key → add new key.
+3. The store has no `await` inside a read-modify-write.
+4. Single uvicorn worker.
+
+## Observability
+- Metric labels: `outcome ∈ {improved, not_improved, rejected}` only.
+- Log submit as `score_submitted` with game_id user_id score improved rank.
+  Never log the API key.

@@ -1,0 +1,35 @@
+# Deploy with OrbStack (Docker engine + Compose + .local domains).
+# Project name fixes the public domain: https://api.leaderboard.orb.local
+name: leaderboard
+
+services:
+  api:
+    build: .
+    container_name: leaderboard-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      SCORE_MIN: "-1000000000"
+      SCORE_MAX: "1000000000"
+      TOP_DEFAULT: "10"
+      TOP_MAX: "100"
+      WINDOW_DEFAULT: "1"
+      WINDOW_MAX: "25"
+      ID_MAX_LEN: "64"
+    labels:
+      # OrbStack HTTPS proxy (no port in the URL). API listens on 8000.
+      - dev.orbstack.http-port=8000
+      - dev.orbstack.domains=leaderboard.local,api.leaderboard.orb.local
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
