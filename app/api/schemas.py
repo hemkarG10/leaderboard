@@ -55,6 +55,13 @@ class RankedEntryOut(BaseModel):
     score: int
 
 
+class GlobalRankedEntryOut(BaseModel):
+    rank: int
+    user_id: str
+    score: int
+    games_played: int
+
+
 class SubmitScoreResponse(BaseModel):
     game_id: str
     user_id: str
@@ -67,6 +74,50 @@ class LeaderboardResponse(BaseModel):
     game_id: str
     total: int
     entries: list[RankedEntryOut]
+
+
+class GlobalLeaderboardResponse(BaseModel):
+    """Cross-game ranking: score is the sum of the user's scores in every game."""
+
+    total: int
+    entries: list[GlobalRankedEntryOut]
+
+
+class UserGameStandingOut(BaseModel):
+    game_id: str
+    rank: int
+    score: int
+    total: int
+
+
+class UserProfileResponse(BaseModel):
+    user_id: str
+    games_played: int
+    total_score: int
+    games: list[UserGameStandingOut]
+
+
+class GameSummaryOut(BaseModel):
+    game_id: str
+    players: int
+    top_score: int
+
+
+class GameListResponse(BaseModel):
+    games: list[GameSummaryOut]
+
+
+class CompareUserOut(BaseModel):
+    user_id: str
+    rank: int
+    score: int
+
+
+class CompareResponse(BaseModel):
+    game_id: str
+    leader: str
+    score_gap: int
+    users: list[CompareUserOut]
 
 
 class UserContextResponse(BaseModel):

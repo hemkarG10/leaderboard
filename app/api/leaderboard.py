@@ -7,11 +7,19 @@ from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import JSONResponse
 
 from app.api.schemas import (
+    CompareResponse,
+    CompareUserOut,
+    GameListResponse,
+    GameSummaryOut,
+    GlobalLeaderboardResponse,
+    GlobalRankedEntryOut,
     LeaderboardResponse,
     RankedEntryOut,
     SubmitScoreRequest,
     SubmitScoreResponse,
     UserContextResponse,
+    UserGameStandingOut,
+    UserProfileResponse,
     validate_id,
 )
 from app.config import Settings, get_settings
@@ -22,6 +30,7 @@ from app.metrics import score_submit_ok, score_submit_rejected
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/v1/games", tags=["leaderboard"])
+global_router = APIRouter(prefix="/v1", tags=["leaderboard"])
 
 
 def get_store(request: Request) -> InMemoryStore:
@@ -37,6 +46,98 @@ def _path_id(value: str, name: str) -> str:
         return validate_id(value, field_name=name)
     except ValueError as exc:
         raise ValidationFailed(str(exc), details=[{"loc": [name], "msg": str(exc)}]) from exc
+
+
+def _limit_or_default(limit: int | None, settings: Settings) -> int:
+    if limit is None:
+        return settings.top_default
+    if limit > settings.top_max:
+        raise ValidationFailed(
+            f"limit must be <= {settings.top_max}",
+            details=[{"loc": ["query", "limit"], "msg": f"max is {settings.top_max}"}],
+        )
+    return limit
+
+
+# --- Global / cross-game reads -------------------------------------------------
+
+
+@global_router.get(
+    "/leaderboard",
+    response_model=GlobalLeaderboardResponse,
+    summary="Global top N (sum of scores across all games)",
+)
+def get_global_leaderboard(
+    limit: int | None = Query(default=None, ge=1, examples=[10]),
+    offset: int = Query(default=0, ge=0, examples=[0]),
+    store: InMemoryStore = Depends(get_store),
+    settings: Settings = Depends(get_app_settings),
+) -> GlobalLeaderboardResponse:
+    limit = _limit_or_default(limit, settings)
+    total, entries = store.global_top(limit, offset)
+    return GlobalLeaderboardResponse(
+        total=total,
+        entries=[
+            GlobalRankedEntryOut(
+                rank=e.rank,
+                user_id=e.user_id,
+                score=e.score,
+                games_played=e.games_played,
+            )
+            for e in entries
+        ],
+    )
+
+
+@global_router.get(
+    "/users/{user_id}",
+    response_model=UserProfileResponse,
+    summary="One player across all games",
+    responses={404: {"description": "user_not_found"}},
+)
+def get_user_profile(
+    user_id: str = Path(..., examples=["alice"]),
+    store: InMemoryStore = Depends(get_store),
+) -> UserProfileResponse:
+    user_id = _path_id(user_id, "user_id")
+    profile = store.user_profile(user_id)
+    return UserProfileResponse(
+        user_id=profile.user_id,
+        games_played=profile.games_played,
+        total_score=profile.total_score,
+        games=[
+            UserGameStandingOut(
+                game_id=g.game_id,
+                rank=g.rank,
+                score=g.score,
+                total=g.total,
+            )
+            for g in profile.games
+        ],
+    )
+
+
+# --- Per-game reads / writes --------------------------------------------------
+
+
+@router.get(
+    "",
+    response_model=GameListResponse,
+    summary="List games with players and top score",
+)
+def list_games(
+    store: InMemoryStore = Depends(get_store),
+) -> GameListResponse:
+    return GameListResponse(
+        games=[
+            GameSummaryOut(
+                game_id=g.game_id,
+                players=g.players,
+                top_score=g.top_score,
+            )
+            for g in store.list_games()
+        ]
+    )
 
 
 @router.post(
@@ -120,14 +221,7 @@ def get_leaderboard(
     settings: Settings = Depends(get_app_settings),
 ) -> LeaderboardResponse:
     game_id = _path_id(game_id, "game_id")
-
-    if limit is None:
-        limit = settings.top_default
-    if limit > settings.top_max:
-        raise ValidationFailed(
-            f"limit must be <= {settings.top_max}",
-            details=[{"loc": ["query", "limit"], "msg": f"max is {settings.top_max}"}],
-        )
+    limit = _limit_or_default(limit, settings)
 
     total, entries = store.top(game_id, limit, offset)
     return LeaderboardResponse(
@@ -136,6 +230,37 @@ def get_leaderboard(
         entries=[
             RankedEntryOut(rank=e.rank, user_id=e.user_id, score=e.score)
             for e in entries
+        ],
+    )
+
+
+@router.get(
+    "/{game_id}/compare",
+    response_model=CompareResponse,
+    summary="Compare two players on one game",
+    responses={
+        404: {"description": "game_not_found / user_not_found"},
+        400: {"description": "validation_failed"},
+    },
+)
+def compare_users(
+    game_id: str = Path(..., examples=["maze"]),
+    user_a: str = Query(..., examples=["alice"]),
+    user_b: str = Query(..., examples=["bob"]),
+    store: InMemoryStore = Depends(get_store),
+) -> CompareResponse:
+    game_id = _path_id(game_id, "game_id")
+    user_a = _path_id(user_a, "user_a")
+    user_b = _path_id(user_b, "user_b")
+
+    result = store.compare(game_id, user_a, user_b)
+    return CompareResponse(
+        game_id=result.game_id,
+        leader=result.leader,
+        score_gap=result.score_gap,
+        users=[
+            CompareUserOut(user_id=u.user_id, rank=u.rank, score=u.score)
+            for u in result.users
         ],
     )
 

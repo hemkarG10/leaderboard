@@ -10,6 +10,9 @@ with neighbours. In-memory, single process (P0).
 
 | Requirement | Where |
 |---|---|
+| Design / ranking rules | [DESIGN.md](DESIGN.md) |
+| ADRs | [DECISIONS.md](DECISIONS.md) (001–006) |
+| Acceptance / API surface | [SPEC.md](SPEC.md) |
 | Architecture / request lifecycle | [docs/architecture.md](docs/architecture.md) (Mermaid) |
 | Validation & errors | pydantic `StrictInt` + ID regex; envelope in `app/main.py` |
 | Tests | `pytest -q` — checklist, scale/race, metrics (`tests/`) |
@@ -26,17 +29,23 @@ with neighbours. In-memory, single process (P0).
 3. **Equal scores are ties.** Break ties by **earlier update first**
    (`achieved_seq`), then **`user_id` ascending**. The same order is used in
    Top X and surroundings.
-4. **Each game has its own leaderboard.** No cross-game ranking.
+4. **Each game has its own leaderboard.** Per-game ranks never mix games.
 5. **Surroundings** (default `window=1`) = this user + the one user immediately
    above + the one user immediately below.
+6. **Global score** = the **sum of the user's current score on every game**.
+   Scores on different games are not the same unit; sum is the locked rule
+   anyway. Tie-break stays earliest `achieved_seq`, then `user_id`. Recompute
+   on each read by walking `by_user` — no second sorted list unless reads get
+   slow. Response entries also include `games_played`.
 
 Scores are **strict integers** in `[score_min, score_max]` (negatives allowed;
 decimals rejected). IDs: `^[A-Za-z0-9_-]{1,64}$`.
 
-| Read | Missing game behaviour |
+| Read | Missing behaviour |
 |---|---|
-| Top X | **200** empty `entries` |
-| Surroundings | **404** `game_not_found` / `user_not_found` |
+| Top X (per-game or global) | **200** empty `entries` |
+| Surroundings / user profile / compare | **404** `game_not_found` / `user_not_found` |
+| Game list | **200** `games: []` when empty |
 
 Swagger at `/docs` is for manual smoke checks. It does **not** replace tests.
 Correctness: `tests/test_checklist_cases.py`. Scale / race / metrics:
@@ -72,6 +81,10 @@ curl -s -X POST localhost:8000/v1/games/maze/scores \
   -H 'Content-Type: application/json' \
   -d '{"user_id":"alice","score":1500}'
 curl -s 'localhost:8000/v1/games/maze/leaderboard?limit=10'
+curl -s 'localhost:8000/v1/leaderboard?limit=10'
+curl -s 'localhost:8000/v1/users/alice'
+curl -s 'localhost:8000/v1/games'
+curl -s 'localhost:8000/v1/games/maze/compare?user_a=alice&user_b=bob'
 curl -s 'localhost:8000/v1/games/maze/users/alice?window=1'
 pytest -q
 ```
@@ -139,8 +152,12 @@ curl -fsS "https://<your-app-url>/docs"
 | Method | Path | Success | Errors |
 |---|---|---|---|
 | POST | `/v1/games/{game_id}/scores` `{user_id, score}` | 201 + `Location` (first) / 200 `{…,rank,improved}` | 400, 409 |
+| GET | `/v1/games` | 200 `{games:[{game_id,players,top_score}]}` | — |
 | GET | `/v1/games/{game_id}/leaderboard?limit&offset` | 200 `{game_id,total,entries:[{rank,user_id,score}]}` | 400 |
 | GET | `/v1/games/{game_id}/users/{user_id}?window` | 200 `{rank,score,total,above,below}` | 400, 404 |
+| GET | `/v1/games/{game_id}/compare?user_a&user_b` | 200 `{leader,score_gap,users}` | 400, 404 |
+| GET | `/v1/leaderboard?limit&offset` | 200 `{total,entries:[{rank,user_id,score,games_played}]}` (sum) | 400 |
+| GET | `/v1/users/{user_id}` | 200 `{games_played,total_score,games:[…]}` | 404 |
 | GET | `/healthz` · `/readyz` · `/metrics` · `/docs` | 200 | — |
 
 Error envelope: `{"error":{"code","message","details","request_id"}}`.
@@ -153,8 +170,9 @@ Defaults: `limit=10` (max 100), `window=1` (max 25). Over-max → **400** (not c
 | Built | Deferred |
 |---|---|
 | Replace-on-update submit, top N, surroundings | Redis / multi-instance |
-| Validation, coded errors, request IDs | Period boards, SSE, rate limits |
-| Checklist cases 1–53 + concurrency | Anti-cheat |
+| Global top N (sum) + profile + game list + compare | Period boards, SSE, rate limits |
+| Validation, coded errors, request IDs | Anti-cheat |
+| Checklist cases 1–53 + concurrency | — |
 | Prometheus outcomes + entry gauge | — |
 | GitHub Actions CI (test + Docker) + DO App Platform CD | — |
 

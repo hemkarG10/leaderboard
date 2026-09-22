@@ -1,6 +1,7 @@
 # Architecture
 
-See also [DESIGN.md](../DESIGN.md) and [DECISIONS.md](../DECISIONS.md).
+**Design:** [DESIGN.md](../DESIGN.md) · **ADRs:** [DECISIONS.md](../DECISIONS.md) ·
+**Spec:** [SPEC.md](../SPEC.md) · **Architecture:** this file
 
 ## Request lifecycle (anchor for review)
 
@@ -29,8 +30,14 @@ flowchart TD
 | Layer | Module | Rule |
 |---|---|---|
 | API | `app/api/` | HTTP only; pydantic in, JSON out |
-| Infra | `app/infra/store.py` | Lifetime, caps, sequence counter |
+| Infra | `app/infra/store.py` | Lifetime, caps, sequence counter; `global_top` aggregates on read |
 | Domain | `app/domain/leaderboard.py` | Pure; stdlib + sortedcontainers |
+
+**Global board** (`GET /v1/leaderboard`): sum of each user's per-game scores;
+tie-break `min(achieved_seq)`, then `user_id`; entries include `games_played`.
+Also: `GET /v1/users/{id}` (profile), `GET /v1/games` (list),
+`GET /v1/games/{id}/compare`. All recompute from existing boards — no extra
+SortedList.
 
 ## Process model
 One uvicorn worker. State lives on `app.state.store`. Multiple workers would

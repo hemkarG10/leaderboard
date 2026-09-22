@@ -1,5 +1,8 @@
 # Architecture Decision Records
 
+**Design:** [DESIGN.md](DESIGN.md) · **ADRs:** this file ·
+**Spec:** [SPEC.md](SPEC.md) · **Architecture:** [docs/architecture.md](docs/architecture.md)
+
 ## ADR-001: Replace on different score; equal is a no-op
 
 **Status:** Accepted (supersedes earlier “best-score only” draft)
@@ -71,3 +74,28 @@ with an empty list; surroundings for unknown game/user should surface clearly.
 
 **Consequences:** Typos on surroundings still 404; Top X stays safe for UIs that
 poll before the first submit.
+
+---
+
+## ADR-006: Global + profile reads recompute from `by_user`
+
+**Status:** Accepted
+
+**Context:** Scores on different games are not the same unit, but the product
+wants a cross-game board and profile without a second index to keep in sync.
+
+**Decision:**
+- A user's **global score** is the **sum of their current score on every game**.
+- Tie-break: earliest `achieved_seq` (`min` across games), then `user_id`.
+- `GET /v1/leaderboard` entries include `games_played`. Same `limit` rules as
+  per-game Top X (default 10, max 100, over → 400). Empty → 200 empty list.
+- `GET /v1/users/{user_id}` returns standings via `rank_of` per board (sorted by
+  `game_id`); unknown user → 404.
+- `GET /v1/games` lists `{game_id, players, top_score}` sorted by `game_id`.
+- `GET /v1/games/{id}/compare` uses two `rank_of` calls; same user → one entry
+  and `score_gap: 0`.
+- Recompute on each request by walking boards. **Do not** keep a second
+  SortedList unless reads get slow.
+
+**Consequences:** O(entries) scan per global/profile request (fine for P0). A
+materialized global index can wait until a second store (Redis) exists.

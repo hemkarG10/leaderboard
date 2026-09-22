@@ -86,8 +86,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "call endpoints directly with **Try it out**.\n\n"
             "| Method | Path |\n|---|---|\n"
             "| POST | `/v1/games/{game_id}/scores` |\n"
+            "| GET | `/v1/games` |\n"
             "| GET | `/v1/games/{game_id}/leaderboard` |\n"
             "| GET | `/v1/games/{game_id}/users/{user_id}` |\n"
+            "| GET | `/v1/games/{game_id}/compare` |\n"
+            "| GET | `/v1/leaderboard` (global sum) |\n"
+            "| GET | `/v1/users/{user_id}` (profile across games) |\n"
             "| GET | `/healthz` · `/readyz` · `/metrics` |"
         ),
         version="1.0.0",
@@ -98,7 +102,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_tags=[
             {
                 "name": "leaderboard",
-                "description": "Submit scores, top N, and user rank context",
+                "description": (
+                    "Submit scores, per-game and global boards, profiles, "
+                    "game list, and head-to-head compare"
+                ),
             },
             {"name": "ops", "description": "Health, readiness, and Prometheus metrics"},
         ],
@@ -174,6 +181,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     app.include_router(health.router)
+    app.include_router(leaderboard.global_router)
     app.include_router(leaderboard.router)
     return app
 

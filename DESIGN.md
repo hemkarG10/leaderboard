@@ -1,5 +1,8 @@
 # Leaderboard Service — Design
 
+**Design:** this file · **ADRs:** [DECISIONS.md](DECISIONS.md) ·
+**Spec:** [SPEC.md](SPEC.md) · **Architecture:** [docs/architecture.md](docs/architecture.md)
+
 ## 1. Problem
 A REST API that ranks users by score **per game** in real time. Clients submit a
 score for a user in a game; readers fetch the top N or a user's rank with the
@@ -90,8 +93,12 @@ order: compute new key → remove old → add new (nothing that can raise betwee
 | Method | Path | Success | Errors |
 |---|---|---|---|
 | POST | `/v1/games/{game_id}/scores` | 201 + `Location` (first entry) / 200 `{game_id,user_id,score,rank,improved}` | 400, 409 |
+| GET | `/v1/games` | 200 `{games:[{game_id,players,top_score}]}` (empty OK) | — |
 | GET | `/v1/games/{game_id}/leaderboard?limit&offset` | 200 `{game_id,total,entries}` (empty OK) | 400 |
 | GET | `/v1/games/{game_id}/users/{user_id}?window` | 200 `{rank,score,total,above,below}` | 400, 404 |
+| GET | `/v1/games/{game_id}/compare?user_a&user_b` | 200 `{leader,score_gap,users}` | 400, 404 |
+| GET | `/v1/leaderboard?limit&offset` | 200 `{total,entries[+games_played]}` — sum across games | 400 |
+| GET | `/v1/users/{user_id}` | 200 `{games_played,total_score,games}` | 404 |
 | GET | `/healthz` · `/readyz` · `/metrics` · `/docs` | 200 | — |
 
 Error envelope: `{"error": {"code", "message", "details", "request_id"}}`.
@@ -99,6 +106,9 @@ Failed validation / capacity checks leave the board unchanged.
 
 `improved` is `true` only when the new score is **strictly greater** than the
 previous; a lower replacement still updates the board with `improved: false`.
+
+**Global / profile / list / compare** are read-only aggregates over existing
+boards (walk `by_user` / `rank_of`). No second SortedList. See ADR-006.
 
 ## 7. Concurrency
 
@@ -166,10 +176,13 @@ See [DECISIONS.md](DECISIONS.md):
 | 003 | In-memory `SortedList` + dict |
 | 004 | Single event-loop, one uvicorn worker |
 | 005 | Unknown game on Top X → empty board; surroundings → 404 |
+| 006 | Global score = sum across games; recompute on read (`games_played`, profile, list, compare) |
 
 ## 13. Verification
 
 - Automated suite: cases 1–53 in `tests/test_checklist_cases.py` (+ domain /
-  concurrency modules). Check status **and** body.
+  concurrency / API modules). Check status **and** body.
+- Scale, race, and Prometheus cases: `tests/test_scale_race_metrics.py`.
 - Manual smoke via Swagger `/docs`: cases 1, 4, 17, 24, 25, 34.
 - Swagger does **not** replace the automated table.
+- Acceptance checklist: [SPEC.md](SPEC.md).

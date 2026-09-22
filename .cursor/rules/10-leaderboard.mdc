@@ -18,10 +18,13 @@ alwaysApply: true
 - Top X on unknown/empty game → 200 empty `entries`. Surroundings miss → 404.
 - Surroundings default `window=1` (one above, one below).
 - First entry → 201 + Location; later → 200.
+- **Global score** = sum of current scores on every game; recompute by walking
+  `by_user` (no second SortedList). Entries include `games_played`.
 
 ## File map
 - `app/domain/leaderboard.py`, `app/infra/store.py`, `app/api/leaderboard.py`,
   `app/api/schemas.py`, `app/errors.py`, `app/config.py`
+- Docs: `DESIGN.md`, `DECISIONS.md`, `SPEC.md`, `docs/architecture.md`
 - Checklist: `tests/test_checklist_cases.py` (cases 1–53)
 
 ## Invariants
