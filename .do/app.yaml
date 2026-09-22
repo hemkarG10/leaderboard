@@ -1,30 +1,24 @@
-# DigitalOcean App Platform — Dockerfile deploy, single instance.
-# After the GitHub repo exists, set github.repo to OWNER/leaderboard and run:
-#   doctl apps create --spec .do/app.yaml
-#
-# Or let GitHub Actions deploy via digitalocean/app_action (see .github/workflows/deploy.yml).
+# DigitalOcean App Platform — image from DOCR (built by GitHub Actions).
 name: leaderboard
 region: nyc
 
 services:
   - name: api
-    dockerfile_path: Dockerfile
-    # Filled in by scripts/do-create.sh / after gh repo create:
-    github:
-      repo: REPLACE_OWNER/leaderboard
-      branch: main
-      # CI/CD deploys via GitHub Actions (.github/workflows/deploy.yml).
-      deploy_on_push: false
+    image:
+      registry_type: DOCR
+      registry: leaderboard-reg
+      repository: leaderboard
+      tag: latest
     http_port: 8000
     instance_count: 1
     instance_size_slug: basic-xxs
     health_check:
       http_path: /healthz
-      initial_delay_seconds: 10
+      initial_delay_seconds: 20
       period_seconds: 10
       timeout_seconds: 3
       success_threshold: 1
-      failure_threshold: 3
+      failure_threshold: 6
     envs:
       - key: SCORE_MIN
         value: "-1000000000"
@@ -40,11 +34,6 @@ services:
         value: "25"
       - key: ID_MAX_LEN
         value: "64"
-    # Optional write auth — set in DO dashboard or:
-    # doctl apps update … with secret API_KEY
-    # - key: API_KEY
-    #   type: SECRET
-    #   value: "…"
 
 ingress:
   rules:
